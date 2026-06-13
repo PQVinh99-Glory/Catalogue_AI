@@ -12,6 +12,9 @@ import {
   RefreshCw,
   Image as ImageIcon,
   X,
+  ZoomIn,     // Thêm biểu tượng phóng to
+  ZoomOut,    // Thêm biểu tượng thu nhỏ
+  RotateCw,   // Thêm biểu tượng xoay ảnh
 } from 'lucide-react';
 
 // Cấu hình Supabase (Thay thế thông tin dự án của anh trực tiếp tại đây)
@@ -87,6 +90,14 @@ export default function App() {
   // Camera Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+
+  // States phục vụ Mô-đun Kính Lúp (Interactive Zoom & Pan Viewer)
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
+  const [scale, setScale] = useState<number>(1);
+  const [rotation, setRotation] = useState<number>(0);
+  const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Trạng thái đăng nhập
   useEffect(() => {
@@ -395,6 +406,59 @@ export default function App() {
     }
   };
 
+  // Xử lý logic kính lúp: Kéo thả, Phóng to/Thu nhỏ, Xoay ảnh
+  const handleOpenZoom = (imageUrl: string) => {
+    setZoomImage(imageUrl);
+    setScale(1);
+    setRotation(0);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  const handleCloseZoom = () => {
+    setZoomImage(null);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      const touch = e.touches[0];
+      setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setPosition({
+        x: touch.clientX - dragStart.x,
+        y: touch.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
   // Bộ lọc thông thường
   const filteredProducts = products.filter((product) => {
     const matchText =
@@ -418,16 +482,16 @@ export default function App() {
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-orange-100">
+        <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xl w-full max-w-md border border-orange-100">
           <div className="flex flex-col items-center mb-6">
             <div className="bg-orange-500 text-white p-3 rounded-full mb-3">
               <Sparkles size={32} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">
-            Catologue System AI
+            <h1 className="text-2xl font-bold text-gray-800 text-center">
+              Catalogue System AI
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Hệ thống phân tích
+              Hệ thống phân tích hình ảnh
             </p>
           </div>
 
@@ -486,35 +550,44 @@ export default function App() {
 
   // Dashboard chính
   return (
-    <div className="min-h-screen pb-12">
-      {/* Header chuẩn Shopee */}
-      <header className="bg-[#ee4d2d] text-white py-4 px-6 sticky top-0 z-50 shadow-md">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Sparkles className="animate-pulse text-yellow-300" size={28} />
-            <h1 className="text-xl font-bold tracking-wider uppercase">
-              Linh Kiện AI Dashboard
-            </h1>
+    <div className="min-h-screen pb-12 bg-gray-50">
+      {/* Header chuẩn Shopee (Tối ưu hóa hiển thị Mobile/PC) */}
+      <header className="bg-[#ee4d2d] text-white py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-md">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
+            <div className="flex items-center gap-2">
+              <Sparkles className="animate-pulse text-yellow-300" size={24} sm={28} />
+              <h1 className="text-lg sm:text-xl font-bold tracking-wider uppercase">
+                Hệ Thống AI Tra Cứu
+              </h1>
+            </div>
+            {/* Đăng xuất trên Mobile nằm ở đây */}
+            <button
+              onClick={handleLogout}
+              className="lg:hidden flex items-center gap-1 text-xs bg-black/20 hover:bg-black/40 px-2.5 py-1.5 rounded transition"
+            >
+              <LogOut size={14} />
+            </button>
           </div>
 
+          {/* Ô tìm kiếm thông thường */}
           <div className="flex-1 max-w-xl w-full flex bg-white rounded-md shadow-sm overflow-hidden">
             <input
               type="text"
               placeholder="Tìm kiếm bằng Mã linh kiện hoặc Đặc trưng (Feature)..."
-              className="w-full px-4 py-2 text-gray-700 focus:outline-none"
+              className="w-full px-3 sm:px-4 py-2 text-sm text-gray-700 focus:outline-none"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <button className="bg-[#f94f2f] px-6 text-white hover:bg-[#d44125] transition flex items-center gap-1">
-              <Search size={18} />
+            <button className="bg-[#f94f2f] px-4 sm:px-6 text-white hover:bg-[#d44125] transition flex items-center gap-1 shrink-0">
+              <Search size={16} />
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-4 shrink-0">
             {modelLoading ? (
               <span className="text-xs bg-yellow-400 text-gray-900 px-2 py-1 rounded flex items-center gap-1">
-                <RefreshCw size={12} className="animate-spin" /> Đang tải Model
-                AI...
+                <RefreshCw size={12} className="animate-spin" /> Đang tải Model AI...
               </span>
             ) : (
               <span className="text-xs bg-green-500 text-white px-2 py-1 rounded">
@@ -531,18 +604,18 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 mt-6">
-        {/* Bộ lọc phân loại & các tùy chọn tìm kiếm */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
-            <span className="text-sm font-semibold text-gray-600 shrink-0">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 mt-6">
+        {/* Bộ lọc phân loại & các tùy chọn tìm kiếm (Tối ưu hóa không bị tràn trên Mobile/Laptop) */}
+        <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-none">
+            <span className="text-xs sm:text-sm font-semibold text-gray-600 shrink-0">
               Phân loại:
             </span>
             {['tất cả', 'trái', 'phải', 'cả hai'].map((side) => (
               <button
                 key={side}
                 onClick={() => setFilterSide(side)}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold border capitalize transition ${
+                className={`px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold border capitalize transition shrink-0 ${
                   filterSide === side
                     ? 'bg-orange-500 text-white border-orange-500'
                     : 'bg-white text-gray-600 hover:bg-gray-100'
@@ -553,9 +626,9 @@ export default function App() {
             ))}
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-            <label className="flex items-center gap-1.5 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold text-xs px-4 py-2.5 rounded-lg cursor-pointer transition shadow-sm">
-              <Camera size={16} />
+          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+            <label className="flex items-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold text-xs px-3 py-2.5 rounded-lg cursor-pointer transition shadow-sm shrink-0">
+              <Camera size={14} />
               <span>Tìm bằng hình ảnh (AI)</span>
               <input
                 type="file"
@@ -578,31 +651,31 @@ export default function App() {
                 });
                 setShowAddModal(true);
               }}
-              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-xs px-4 py-2.5 rounded-lg transition shadow-sm"
+              className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white font-semibold text-xs px-3 py-2.5 rounded-lg transition shadow-sm shrink-0"
             >
-              <Plus size={16} /> Thêm Linh Kiện Mới
+              <Plus size={14} /> Thêm Linh Kiện Mới
             </button>
           </div>
         </div>
 
         {/* Thông báo kết quả so khớp của AI */}
         {aiSearchPreview && (
-          <div className="bg-orange-50 p-4 rounded-xl border border-orange-200 mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="bg-orange-50 p-3 sm:p-4 rounded-xl border border-orange-200 mb-6 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
               <img
                 src={aiSearchPreview}
                 alt="Target"
-                className="w-16 h-16 object-cover rounded-lg border-2 border-orange-400"
+                className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg border-2 border-orange-400 shrink-0"
               />
               <div>
-                <h4 className="font-semibold text-orange-800 text-sm">
+                <h4 className="font-semibold text-orange-800 text-xs sm:text-sm">
                   Tìm kiếm bằng hình ảnh đang hoạt động
                 </h4>
-                <p className="text-xs text-orange-600 mt-0.5">
+                <p className="text-[10px] sm:text-xs text-orange-600 mt-0.5">
                   Sắp xếp các sản phẩm tương đồng lên trước.
                 </p>
                 {isAiSearching && (
-                  <p className="text-xs text-blue-600 animate-pulse mt-1">
+                  <p className="text-[10px] sm:text-xs text-blue-600 animate-pulse mt-1">
                     Đang xử lý phân tích AI...
                   </p>
                 )}
@@ -613,7 +686,7 @@ export default function App() {
                 setAiSearchPreview('');
                 setAiResults(null);
               }}
-              className="text-gray-500 hover:text-red-500"
+              className="text-gray-500 hover:text-red-500 shrink-0"
             >
               <X size={20} />
             </button>
@@ -627,12 +700,12 @@ export default function App() {
               className="animate-spin text-orange-500 mb-2"
               size={32}
             />
-            <p className="text-gray-500">Đang đồng bộ dữ liệu hệ thống...</p>
+            <p className="text-gray-500 text-sm">Đang đồng bộ dữ liệu hệ thống...</p>
           </div>
         ) : finalDisplayProducts.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-xl border border-dashed">
             <ImageIcon className="mx-auto text-gray-300 mb-3" size={48} />
-            <p className="text-gray-500">Không tìm thấy linh kiện nào.</p>
+            <p className="text-gray-500 text-sm">Không tìm thấy linh kiện nào.</p>
           </div>
         ) : (
           <div>
@@ -648,12 +721,17 @@ export default function App() {
                     key={product.id}
                     className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-lg hover:-translate-y-1 transition duration-200 border border-gray-100 flex flex-col group relative"
                   >
-                    <div className="relative aspect-square bg-gray-100 overflow-hidden">
+                    {/* Ảnh sản phẩm - Nhấp trực tiếp để Kích Hoạt Kính Lúp Phóng To */}
+                    <div 
+                      onClick={() => product.image_url && handleOpenZoom(product.image_url)}
+                      className="relative aspect-square bg-gray-100 overflow-hidden cursor-zoom-in"
+                      title="Bấm vào để phóng to kiểm tra chi tiết"
+                    >
                       {product.image_url ? (
                         <img
                           src={product.image_url}
                           alt={product.component_code}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           loading="lazy"
                         />
                       ) : (
@@ -689,17 +767,17 @@ export default function App() {
                       </span>
                     </div>
 
-                    <div className="p-3 flex-1 flex flex-col justify-between">
+                    <div className="p-3 flex-1 flex flex-col justify-between gap-2">
                       <div>
-                        <h3 className="font-bold text-sm text-gray-900 truncate">
+                        <h3 className="font-bold text-xs sm:text-sm text-gray-900 truncate">
                           Mã: {product.component_code}
                         </h3>
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2 min-h-[2rem]">
+                        <p className="text-[11px] sm:text-xs text-gray-500 mt-1 line-clamp-2 min-h-[2rem]">
                           Đặc trưng: {product.feature || 'Không có mô tả'}
                         </p>
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-gray-50 flex items-center justify-between opacity-100 sm:opacity-0 group-hover:opacity-100 transition duration-150">
+                      <div className="pt-2 border-t border-gray-50 flex items-center justify-between opacity-100 sm:opacity-0 group-hover:opacity-100 transition duration-150">
                         <button
                           onClick={() => handleEditClick(product)}
                           className="text-gray-500 hover:text-blue-600 flex items-center gap-0.5 text-xs font-semibold"
@@ -737,12 +815,12 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL THÊM / CẬP NHẬT LINH KIỆN */}
+      {/* MODAL THÊM / CẬP NHẬT LINH KIỆN (Tối ưu chống tràn cho LAPTOP và MOBILE) */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div className="p-4 bg-orange-500 text-white flex items-center justify-between">
-              <h2 className="font-bold text-lg">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg my-auto overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <div className="p-4 bg-orange-500 text-white flex items-center justify-between shrink-0">
+              <h2 className="font-bold text-base sm:text-lg">
                 {editingProduct ? 'Cập Nhật Linh Kiện' : 'Thêm Linh Kiện Mới'}
               </h2>
               <button
@@ -750,13 +828,14 @@ export default function App() {
                   setShowAddModal(false);
                   stopCamera();
                 }}
-                className="hover:bg-black/10 p-1 rounded"
+                className="hover:bg-black/10 p-1.5 rounded transition"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="p-6 space-y-4">
+            {/* Form nội dung cho phép cuộn độc lập khi xem trên Laptop/Mobile màn hình ngắn */}
+            <form onSubmit={handleSaveProduct} className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">
                   Mã Linh Kiện *
@@ -765,7 +844,7 @@ export default function App() {
                   type="text"
                   required
                   placeholder="Ví dụ: LK-09-LEFT"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 border text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                   value={formData.component_code}
                   onChange={(e) =>
                     setFormData({ ...formData, component_code: e.target.value })
@@ -778,7 +857,7 @@ export default function App() {
                   Bên Sử Dụng
                 </label>
                 <select
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 border text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                   value={formData.side}
                   onChange={(e) =>
                     setFormData({ ...formData, side: e.target.value as any })
@@ -792,12 +871,12 @@ export default function App() {
 
               <div>
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">
-                  Đặc trưng chính (Feature)
+                  Sử Dụng cho đơn (Feature)
                 </label>
                 <textarea
                   rows={2}
                   placeholder="Mô tả nhận diện: 3 lỗ bắt vít, vát cạnh trái..."
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 border text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                   value={formData.feature}
                   onChange={(e) =>
                     setFormData({ ...formData, feature: e.target.value })
@@ -875,14 +954,14 @@ export default function App() {
                       <button
                         type="button"
                         onClick={startCamera}
-                        className="flex items-center gap-1 bg-blue-600 text-white text-xs px-4 py-2 rounded hover:bg-blue-700 transition"
+                        className="flex items-center gap-1 bg-blue-600 text-white text-xs px-3 py-2 rounded hover:bg-blue-700 transition"
                       >
                         <Camera size={14} /> Chụp Ảnh Trực Tiếp
                       </button>
 
-                      <label className="flex items-center gap-1 bg-gray-200 text-gray-700 text-xs px-4 py-2 rounded hover:bg-gray-300 transition cursor-pointer">
+                      <label className="flex items-center gap-1 bg-gray-200 text-gray-700 text-xs px-3 py-2 rounded hover:bg-gray-300 transition cursor-pointer">
                         <Upload size={14} />
-                        <span>Chọn file ảnh từ máy</span>
+                        <span>Chọn file ảnh</span>
                         <input
                           type="file"
                           accept="image/*"
@@ -904,7 +983,8 @@ export default function App() {
                 )}
               </div>
 
-              <div className="pt-4 border-t flex justify-end gap-2">
+              {/* Phần chân nút bấm cố định nằm trong dòng chảy modal */}
+              <div className="pt-4 border-t flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -925,6 +1005,105 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KÍNH LÚP: XOAY, PHÓNG TO, THU NHỎ, VUỐT KÉO THẢ 60FPS (CHỐNG TRÀN PC/MOBILE) */}
+      {zoomImage && (
+        <div className="fixed inset-0 bg-black/95 flex flex-col items-center justify-center p-4 z-[100] overflow-hidden select-none">
+          {/* Nút đóng ở góc trên bên phải */}
+          <button
+            type="button"
+            onClick={handleCloseZoom}
+            className="absolute top-4 right-4 text-white hover:text-red-500 bg-white/10 hover:bg-white/20 p-2.5 rounded-full transition duration-150 z-50"
+            title="Đóng trình xem chi tiết"
+          >
+            <X size={24} />
+          </button>
+
+          {/* Vùng tương tác kéo thả linh kiện (Tương thích chuột PC & cảm ứng Mobile) */}
+          <div
+            className="relative flex-1 w-full flex items-center justify-center overflow-hidden cursor-move"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            <img
+              src={zoomImage}
+              alt="Detail Inspection"
+              draggable={false}
+              style={{
+                // translate3d kích hoạt card đồ họa tăng tốc phần cứng (GPU) cho hiệu năng tối đa 60fps
+                transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${scale}) rotate(${rotation}deg)`,
+                transition: isDragging ? 'none' : 'transform 0.12s ease-out',
+                maxHeight: '75vh',
+                maxWidth: '90vw',
+                objectFit: 'contain',
+              }}
+              className="pointer-events-none shadow-2xl rounded"
+            />
+          </div>
+
+          {/* Thanh công cụ điều khiển kính lúp bên dưới */}
+          <div className="bg-white/10 backdrop-blur-md px-5 py-2.5 rounded-full flex items-center gap-5 text-white mb-6 shadow-lg z-50">
+            {/* Thu nhỏ */}
+            <button
+              type="button"
+              onClick={() => setScale((prev) => Math.max(0.5, prev - 0.25))}
+              className="hover:text-orange-500 transition-colors p-1"
+              title="Thu nhỏ"
+            >
+              <ZoomOut size={18} />
+            </button>
+
+            {/* Hiển thị tỷ lệ */}
+            <span className="text-xs font-semibold font-mono min-w-[3rem] text-center">
+              {Math.round(scale * 100)}%
+            </span>
+
+            {/* Phóng to */}
+            <button
+              type="button"
+              onClick={() => setScale((prev) => Math.min(5, prev + 0.25))}
+              className="hover:text-orange-500 transition-colors p-1"
+              title="Phóng to"
+            >
+              <ZoomIn size={18} />
+            </button>
+
+            <div className="h-4 w-[1px] bg-white/20" />
+
+            {/* Xoay góc linh kiện */}
+            <button
+              type="button"
+              onClick={() => setRotation((prev) => (prev + 90) % 360)}
+              className="hover:text-orange-500 transition-colors flex items-center gap-1 text-xs font-semibold"
+              title="Xoay ảnh 90 độ"
+            >
+              <RotateCw size={16} />
+              <span className="hidden sm:inline">Xoay</span>
+            </button>
+
+            <div className="h-4 w-[1px] bg-white/20" />
+
+            {/* Đưa về mặc định */}
+            <button
+              type="button"
+              onClick={() => {
+                setScale(1);
+                setRotation(0);
+                setPosition({ x: 0, y: 0 });
+              }}
+              className="hover:text-orange-500 transition-colors text-xs font-bold uppercase tracking-wider"
+              title="Khôi phục mặc định"
+            >
+              Đặt lại
+            </button>
           </div>
         </div>
       )}
