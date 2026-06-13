@@ -424,10 +424,10 @@ export default function App() {
               <Sparkles size={32} />
             </div>
             <h1 className="text-2xl font-bold text-gray-800">
-              Linh Kiện Shopee AI
+            Catologue System AI
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Hệ thống phân tích & lưu trữ ảnh mượt mà
+              Hệ thống phân tích
             </p>
           </div>
 
