@@ -17,10 +17,9 @@ import {
   RotateCw,   // Thêm biểu tượng xoay ảnh
 } from 'lucide-react';
 
-// Cấu hình Supabase (Thay thế thông tin dự án của anh trực tiếp tại đây)
+// Cấu hình Supabase (Giữ nguyên thông tin dự án của anh)
 const SUPABASE_URL = 'https://vhsikdgkzecdfopkpzum.supabase.co';
-const SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoc2lrZGdremVjZGZvcGtwenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNjgyMTcsImV4cCI6MjA5Njg0NDIxN30.bj1yl4azsk8X-V2I1C6l5Qpa0kqt6j0TP4ZCJ3Du0l4';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoc2lrZGdremVjZGZvcGtwenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNjgyMTcsImV4cCI6MjA5Njg0NDIxN30.bj1yl4azsk8X-V2I1C6l5Qpa0kqt6j0TP4ZCJ3Du0l4';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Định nghĩa dữ liệu chuẩn TypeScript
@@ -48,6 +47,64 @@ interface AiScore {
   id: string;
   score: number;
 }
+
+// Hàm nén ảnh tự động trực tiếp trên điện thoại/máy tính trước khi tải lên
+const compressImage = (file: File, maxWidth = 1024, maxHeight = 1024, quality = 0.85): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Tính toán tỷ lệ co giãn để không bị méo ảnh
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(file); // Nếu trình duyệt lỗi canvas thì trả về file gốc
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              // Chuyển blob thành file JPEG dung lượng cực nhẹ
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => resolve(file);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 export default function App() {
   // Authentication States
@@ -114,13 +171,14 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Tải mô hình AI MobileNet trên trình duyệt
+  // Tải mô hình AI MobileNet V2 độ chính xác cao trên trình duyệt
   useEffect(() => {
     const loadMobileNet = async () => {
       try {
         const globalWindow = window as any;
         if (globalWindow.mobilenet) {
-          const model = await globalWindow.mobilenet.load();
+          // Bắt buộc tải phiên bản chính xác và chi tiết nhất: MobileNet v2 alpha 1.0
+          const model = await globalWindow.mobilenet.load({ version: 2, alpha: 1.0 });
           setAiModel(model);
         }
       } catch (error) {
@@ -263,13 +321,16 @@ export default function App() {
     try {
       let image_url = formData.imageUrl;
 
-      // 1. Tải ảnh lên Supabase Storage nếu có ảnh mới
+      // 1. Tải ảnh lên Supabase Storage nếu có ảnh mới (Bổ sung bộ tự động nén ảnh)
       if (formData.imageFile) {
-        const fileExt = formData.imageFile.name.split('.').pop();
+        // Thực hiện nén ảnh trước khi tải lên
+        const compressedFile = await compressImage(formData.imageFile);
+        
+        const fileExt = 'jpg'; // Vì ảnh nén mặc định xuất ra đuôi JPG
         const fileName = `${user.id}/${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from('product-images')
-          .upload(fileName, formData.imageFile);
+          .upload(fileName, compressedFile);
 
         if (uploadError) throw uploadError;
 
@@ -371,12 +432,14 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setAiSearchPreview(URL.createObjectURL(file));
+    // Tiến hành nén ảnh tìm kiếm trước khi phân tích nhằm tăng hiệu suất
+    const compressedFile = await compressImage(file, 800, 800, 0.9);
+    setAiSearchPreview(URL.createObjectURL(compressedFile));
     setIsAiSearching(true);
 
     try {
       const tempImg = new Image();
-      tempImg.src = URL.createObjectURL(file);
+      tempImg.src = URL.createObjectURL(compressedFile);
       await new Promise((resolve) => (tempImg.onload = resolve));
 
       const targetVector = await extractFeatures(tempImg);
@@ -556,7 +619,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
             <div className="flex items-center gap-2">
-              <Sparkles className="animate-pulse text-yellow-300" size={24} sm={28} />
+              <Sparkles className="animate-pulse text-yellow-300" size={24} />
               <h1 className="text-lg sm:text-xl font-bold tracking-wider uppercase">
                 Hệ Thống AI Tra Cứu
               </h1>
@@ -579,7 +642,7 @@ export default function App() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <button className="bg-[#f94f2f] px-4 sm:px-6 text-white hover:bg-[#d44125] transition flex items-center gap-1 shrink-0">
+            <button className="bg-[#f94f2f] px-6 text-white hover:bg-[#d44125] transition flex items-center gap-1 shrink-0">
               <Search size={16} />
             </button>
           </div>
