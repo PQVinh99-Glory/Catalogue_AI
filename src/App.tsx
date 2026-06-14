@@ -120,51 +120,68 @@ export default function App() {
 
 const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return alert('Vui lòng đăng nhập lại!');
     if (formData.files.length === 0) return alert('Vui lòng thêm ít nhất 1 ảnh!');
     setLoading(true);
 
     try {
-      // 1. Tạo Product gốc
+      console.log("1. Bắt đầu lưu sản phẩm cho user:", user.id);
+      
+      // Bước 1: Lưu vào bảng products
       const { data: productData, error: pErr } = await supabase
         .from('products')
-        .insert([{ ...formData, user_id: user.id }])
-        .select(); // Bỏ .single() để lấy mảng, an toàn hơn
+        .insert([{ 
+          component_code: formData.component_code, 
+          feature: formData.feature, 
+          side: formData.side, 
+          user_id: user.id 
+        }])
+        .select();
 
-      if (pErr) throw pErr;
-      
-      const product = productData?.[0]; // Lấy phần tử đầu tiên của mảng
+      console.log("2. Kết quả trả về từ Supabase:", productData);
 
-      // KIỂM TRA QUAN TRỌNG: Nếu product vẫn null sau khi insert
-      if (!product) {
-        throw new Error("Lỗi bảo mật RLS: Dữ liệu đã được lưu nhưng hệ thống không thể đọc lại ID. Vui lòng kiểm tra lại SQL Policy.");
+      if (pErr) {
+        console.error("Lỗi Insert:", pErr);
+        throw new Error(`Lỗi database: ${pErr.message}`);
       }
 
-      // 2. Xử lý từng ảnh (Nén -> Upload -> Vector -> Lưu)
-      const imagePayloads = await Promise.all(formData.files.map(async (file) => {
+      if (!productData || productData.length === 0) {
+        console.error("LỖI NGHIÊM TRỌNG: Supabase không trả về ID sản phẩm!");
+        throw new Error("Hệ thống không thể lấy ID sản phẩm. Vui lòng chạy lại SQL tắt RLS.");
+      }
+
+      const product = productData[0];
+      console.log("3. Đã lấy được ID sản phẩm:", product.id);
+
+      // Bước 2: Xử lý từng ảnh
+      const imagePayloads = await Promise.all(formData.files.map(async (file, index) => {
+        console.log(`Đang xử lý ảnh ${index + 1}...`);
         const compressed = await compressImage(file);
-        const fileName = `${user.id}/${Date.now()}-${Math.random()}.jpg`;
+        const fileName = `${user.id}/${Date.now()}-${index}.jpg`;
         
         const { error: uploadError } = await supabase.storage
           .from('product-images')
           .upload(fileName, compressed);
+
         if (uploadError) throw uploadError;
 
         const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(fileName);
-
-        // Lấy vector từ Worker
         const vector = await getVector(publicUrl);
         
         return { product_id: product.id, image_url: publicUrl, embedding: vector };
       }));
 
-      await supabase.from('product_images').insert(imagePayloads);
-      
+      // Bước 3: Lưu hàng loạt ảnh vào product_images
+      const { error: imgErr } = await supabase.from('product_images').insert(imagePayloads);
+      if (imgErr) throw imgErr;
+
+      alert('Lưu linh kiện thành công!');
       setFormData({ component_code: '', feature: '', side: 'cả hai', files: [] });
       setShowAddModal(false);
       fetchProducts();
     } catch (err: any) {
-      console.error("Full Error:", err);
-      alert('Có lỗi xảy ra: ' + err.message);
+      console.error("Full Error Log:", err);
+      alert('Lỗi: ' + err.message);
     } finally {
       setLoading(false);
     }
