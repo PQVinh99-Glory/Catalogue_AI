@@ -20,7 +20,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { ClipService, type ClipModelStatus } from "./services/clip.service";
+import { ClipService } from "./services/clip.service";
 
 const SUPABASE_URL = "https://vhsikdgkzecdfopkpzum.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -62,6 +62,8 @@ interface ProductCard {
   storage_paths: string[];
   similarity?: number;
 }
+
+type AiStatus = "idle" | "loading" | "ready" | "error";
 
 const DEFAULT_DISPLAY_LIMIT = 20;
 const MAX_IMAGES_PER_PRODUCT = 4;
@@ -128,7 +130,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [loading, setLoading] = useState(false);
-  const [aiStatus, setAiStatus] = useState<ClipModelStatus>("loading");
+  const [aiStatus, setAiStatus] = useState<AiStatus>("idle");
   const [aiProgress, setAiProgress] = useState(0);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
@@ -157,10 +159,6 @@ export default function App() {
     });
 
     clipServiceRef.current = clipService;
-    clipService.loadModel().catch((error) => {
-      setAiStatus("error");
-      setAiError(error instanceof Error ? error.message : "Không tải được model CLIP.");
-    });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -515,6 +513,28 @@ export default function App() {
     setPosition({ x: 0, y: 0 });
   };
 
+  const closeZoom = () => {
+    setZoomImage(null);
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (!zoomImage) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeZoom();
+      if (event.key === "+" || event.key === "=") {
+        setScale((value) => Math.min(6, value + 0.25));
+      }
+      if (event.key === "-") {
+        setScale((value) => Math.max(0.4, value - 0.25));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [zoomImage]);
+
   const handleMouseDown = (event: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({ x: event.clientX - position.x, y: event.clientY - position.y });
@@ -526,11 +546,13 @@ export default function App() {
   };
 
   const aiLabel =
-    aiStatus === "ready"
-      ? "AI sẵn sàng"
-      : aiStatus === "error"
-        ? "Lỗi tải AI"
-        : `Đang tải CLIP ${aiProgress}%`;
+    aiStatus === "idle"
+      ? "AI tải khi cần"
+      : aiStatus === "ready"
+        ? "AI sẵn sàng"
+        : aiStatus === "error"
+          ? "Lỗi tải AI"
+          : `Đang tải CLIP ${aiProgress}%`;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
@@ -867,12 +889,25 @@ export default function App() {
 
       {zoomImage && (
         <div className="fixed inset-0 z-[100] flex select-none flex-col items-center justify-center bg-black/95">
-          <X
-            className="absolute right-6 top-6 cursor-pointer text-white"
-            onClick={() => setZoomImage(null)}
-          />
+          <button
+            type="button"
+            className="absolute right-4 top-4 z-[120] rounded-full bg-white/15 p-3 text-white shadow-lg backdrop-blur hover:bg-white/25"
+            onClick={closeZoom}
+            title="Đóng"
+          >
+            <X size={28} />
+          </button>
           <div
-            className="relative flex w-full flex-1 cursor-move items-center justify-center"
+            className="relative flex w-full flex-1 cursor-move items-center justify-center overflow-hidden"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closeZoom();
+            }}
+            onWheel={(event) => {
+              event.preventDefault();
+              setScale((value) =>
+                event.deltaY < 0 ? Math.min(6, value + 0.2) : Math.max(0.4, value - 0.2),
+              );
+            }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={() => setIsDragging(false)}
@@ -891,25 +926,34 @@ export default function App() {
           >
             <img
               src={zoomImage}
-              className="max-h-[80vh] shadow-2xl transition-transform duration-100"
+              className="max-h-[82vh] max-w-[92vw] shadow-2xl transition-transform duration-100"
               style={{
                 transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${scale}) rotate(${rotation}deg)`,
               }}
+              onClick={(event) => event.stopPropagation()}
               alt="Ảnh phóng to"
             />
           </div>
-          <div className="mb-8 flex items-center gap-6 rounded-full bg-white/10 p-4 text-white backdrop-blur-md">
-            <button onClick={() => setScale((value) => Math.max(0.5, value - 0.25))}>
-              <ZoomOut />
+          <div className="relative z-[110] mb-6 flex items-center gap-4 rounded-full bg-white/15 p-3 text-white shadow-xl backdrop-blur-md">
+            <button
+              className="rounded-full p-2 hover:bg-white/20"
+              onClick={() => setScale((value) => Math.max(0.4, value - 0.25))}
+              title="Thu nhỏ"
+            >
+              <ZoomOut size={24} />
             </button>
-            <span className="font-mono">{Math.round(scale * 100)}%</span>
-            <button onClick={() => setScale((value) => Math.min(5, value + 0.25))}>
-              <ZoomIn />
+            <span className="min-w-14 text-center font-mono">{Math.round(scale * 100)}%</span>
+            <button
+              className="rounded-full p-2 hover:bg-white/20"
+              onClick={() => setScale((value) => Math.min(6, value + 0.25))}
+              title="Phóng to"
+            >
+              <ZoomIn size={24} />
             </button>
             <div className="h-6 w-px bg-white/20" />
             <button
               onClick={() => setRotation((value) => (value + 90) % 360)}
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 rounded-full px-3 py-2 hover:bg-white/20"
             >
               <RotateCw size={16} /> Xoay
             </button>
@@ -919,7 +963,7 @@ export default function App() {
                 setRotation(0);
                 setPosition({ x: 0, y: 0 });
               }}
-              className="text-xs font-bold uppercase"
+              className="rounded-full px-3 py-2 text-xs font-bold uppercase hover:bg-white/20"
             >
               Đặt lại
             </button>
