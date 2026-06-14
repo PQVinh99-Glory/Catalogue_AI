@@ -154,22 +154,36 @@ const handleSave = async (e: React.FormEvent) => {
       console.log("3. Đã lấy được ID sản phẩm:", product.id);
 
       // Bước 2: Xử lý từng ảnh
-      const imagePayloads = await Promise.all(formData.files.map(async (file, index) => {
-        console.log(`Đang xử lý ảnh ${index + 1}...`);
-        const compressed = await compressImage(file);
-        const fileName = `${user.id}/${Date.now()}-${index}.jpg`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('product-images')
-          .upload(fileName, compressed);
+   const imagePayloads = await Promise.all(
+  formData.files.map(async (file,index)=>{
 
-        if (uploadError) throw uploadError;
+      const compressed =
+      await compressImage(file);
 
-        const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(fileName);
-        const vector = await getVector(publicUrl);
-        
-        return { product_id: product.id, image_url: publicUrl, embedding: vector };
-      }));
+      const vector =
+      await clipService.extractVector(
+          compressed
+      );
+
+      const path =
+      `${user.id}/${crypto.randomUUID()}.jpg`;
+
+      await supabase.storage
+      .from("product-images")
+      .upload(path, compressed);
+
+      const { data } =
+      supabase.storage
+      .from("product-images")
+      .getPublicUrl(path);
+
+      return {
+          product_id: product.id,
+          image_url: data.publicUrl,
+          embedding: vector
+      };
+  })
+);
 
       // Bước 3: Lưu hàng loạt ảnh vào product_images
       const { error: imgErr } = await supabase.from('product_images').insert(imagePayloads);
