@@ -9,10 +9,17 @@ const loadExtractor = (requestId?: number) => {
       "Xenova/clip-vit-base-patch32",
       {
         progress_callback(progress: any) {
+          const percent =
+            typeof progress.progress === "number"
+              ? progress.progress
+              : typeof progress.loaded === "number" && typeof progress.total === "number" && progress.total > 0
+                ? (progress.loaded / progress.total) * 100
+                : 0;
+
           self.postMessage({
             type: "MODEL_PROGRESS",
             requestId,
-            progress: progress.progress ?? 0,
+            progress: percent,
           });
         },
       },

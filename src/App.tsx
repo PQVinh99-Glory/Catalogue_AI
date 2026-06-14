@@ -262,13 +262,14 @@ export default function App() {
   const visibleProducts = filteredProducts.slice(0, displayLimit);
 
   const getClipVector = async (file: File) => {
-    if (aiStatus !== "ready") {
-      throw new Error("Model CLIP chưa sẵn sàng. Vui lòng chờ tải xong model.");
-    }
-
     const clipService = clipServiceRef.current;
     if (!clipService) {
       throw new Error("CLIP worker chưa được khởi tạo.");
+    }
+
+    if (aiStatus !== "ready") {
+      setAiStatus("loading");
+      setAiError(null);
     }
 
     return clipService.extractVector(file);
@@ -826,7 +827,7 @@ export default function App() {
               </div>
 
               <button
-                disabled={loading || aiStatus !== "ready"}
+                disabled={loading}
                 className="w-full rounded-lg bg-orange-500 py-3 font-bold text-white transition hover:bg-orange-600 disabled:bg-gray-300"
               >
                 {loading

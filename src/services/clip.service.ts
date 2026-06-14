@@ -1,4 +1,5 @@
 let counter = 0;
+const MODEL_LOAD_TIMEOUT_MS = 180_000;
 
 export type ClipModelStatus = "loading" | "ready" | "error";
 
@@ -21,6 +22,16 @@ const blobToDataUrl = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob);
   });
 
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+};
+
 export class ClipService {
   private worker: Worker;
   private pending = new Map<number, PendingRequest>();
@@ -40,10 +51,14 @@ export class ClipService {
     const requestId = ++counter;
     this.onStatus?.({ status: "loading", progress: 0 });
 
-    this.loadPromise = new Promise((resolve, reject) => {
+    this.loadPromise = withTimeout(
+      new Promise((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject });
       this.worker.postMessage({ type: "LOAD_MODEL", requestId });
-    });
+      }),
+      MODEL_LOAD_TIMEOUT_MS,
+      "Tải model CLIP quá lâu. Kiểm tra mạng hoặc thử refresh lại trang.",
+    );
 
     return this.loadPromise;
   }
