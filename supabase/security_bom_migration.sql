@@ -144,6 +144,26 @@ create policy "Users can delete product images"
     )
   );
 
+drop policy if exists "Users can update product image embeddings" on public.product_images;
+create policy "Users can update product image embeddings"
+  on public.product_images for update
+  using (
+    exists (
+      select 1
+      from public.products p
+      where p.id = product_images.product_id
+        and p.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.products p
+      where p.id = product_images.product_id
+        and p.user_id = auth.uid()
+    )
+  );
+
 update storage.buckets
 set public = false
 where id = 'product-images';

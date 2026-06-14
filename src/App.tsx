@@ -65,6 +65,7 @@ interface ProductCard {
 }
 
 interface ProductImageView {
+  id?: string;
   url: string;
   storage_path?: string;
 }
@@ -74,7 +75,7 @@ type AiStatus = "idle" | "loading" | "ready" | "error";
 const DEFAULT_DISPLAY_LIMIT = 20;
 const MAX_IMAGES_PER_PRODUCT = 4;
 const SIGNED_URL_TTL_SECONDS = 60 * 30;
-const ENABLE_CLIENT_AI_EMBEDDING = false;
+const ENABLE_CLIENT_AI_EMBEDDING = true;
 
 const sideOptions: ProductSide[] = ["trái", "phải", "cả hai"];
 const filterOptions: SideFilter[] = ["tất cả", ...sideOptions];
@@ -147,6 +148,8 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [operationMessage, setOperationMessage] = useState<string | null>(null);
+  const [searchPreview, setSearchPreview] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSide, setFilterSide] = useState<SideFilter>("tất cả");
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_DISPLAY_LIMIT);
@@ -206,6 +209,7 @@ export default function App() {
         const signedImages = (
           await Promise.all(
             images.map(async (image) => ({
+              id: image.id,
               url: await signImageUrl(image),
               storage_path: image.storage_path ?? undefined,
             })),
@@ -346,7 +350,7 @@ export default function App() {
 
     if (skippedEmbeddings > 0) {
       setOperationMessage(
-        `Đã lưu ${files.length} ảnh. Có ${skippedEmbeddings} ảnh chưa có vector AI; phần AI sẽ được xử lý bằng dịch vụ online ở bước triển khai.`,
+        `Đã lưu ${files.length} ảnh. Có ${skippedEmbeddings} ảnh chưa có vector AI; anh có thể tạo lại AI trong màn chi tiết khi model sẵn sàng.`,
       );
     }
   };
@@ -456,6 +460,8 @@ export default function App() {
     if (!file) return;
 
     setLoading(true);
+    setIsScanning(true);
+    setSearchPreview(URL.createObjectURL(file));
 
     try {
       const compressed = await compressImage(file);
@@ -468,10 +474,57 @@ export default function App() {
 
       if (error) throw error;
 
-      setProducts(await toProductCards(data as ProductRecord[]));
+      const matchedProducts = await toProductCards(data as ProductRecord[]);
+      setProducts(matchedProducts);
       setDisplayLimit(DEFAULT_DISPLAY_LIMIT);
+      if (matchedProducts.length === 0) {
+        setOperationMessage(
+          "AI chưa tìm thấy kết quả. Những ảnh cũ có thể chưa có vector AI, hãy mở chi tiết và bấm tạo AI cho ảnh.",
+        );
+      }
     } catch (error) {
       alert(`Lỗi tìm kiếm AI: ${error instanceof Error ? error.message : "Không xác định"}`);
+    } finally {
+      setLoading(false);
+      setIsScanning(false);
+    }
+  };
+
+  const handleBuildEmbeddings = async (product: ProductCard) => {
+    const imagesWithIds = product.images.filter((image) => image.id);
+    if (imagesWithIds.length === 0) {
+      alert("Không tìm thấy ảnh có ID để cập nhật AI.");
+      return;
+    }
+
+    setLoading(true);
+    setOperationMessage(null);
+
+    try {
+      let updatedCount = 0;
+
+      for (const image of imagesWithIds) {
+        const response = await fetch(image.url);
+        if (!response.ok) throw new Error(`Không tải được ảnh ${updatedCount + 1}.`);
+        const blob = await response.blob();
+        const imageFile = new File([blob], "catalogue-image.jpg", {
+          type: blob.type || "image/jpeg",
+        });
+        const vector = await getClipVector(imageFile);
+        const { error } = await supabase
+          .from("product_images")
+          .update({ embedding: vector })
+          .eq("id", image.id);
+
+        if (error) throw error;
+        updatedCount += 1;
+      }
+
+      setOperationMessage(`Đã tạo vector AI cho ${updatedCount} ảnh.`);
+      await fetchProducts();
+      setSelectedProduct(null);
+    } catch (error) {
+      alert(`Lỗi tạo AI: ${error instanceof Error ? error.message : "Không xác định"}`);
     } finally {
       setLoading(false);
     }
@@ -576,8 +629,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
-      <header className="sticky top-0 z-50 bg-[#ee4d2d] px-6 py-4 text-white shadow-md">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 md:flex-row">
+      <header className="sticky top-0 z-50 bg-[#ee4d2d] px-4 py-4 text-white shadow-md">
+        <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-4 sm:items-center md:flex-row">
           <div className="flex items-center gap-3">
             <Sparkles className="text-yellow-300" size={28} />
             <div>
@@ -607,10 +660,10 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto mt-6 max-w-7xl px-4">
-        <div className="mb-6 flex flex-col gap-4 rounded-lg border bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative max-w-md flex-1">
+      <main className="mx-auto mt-6 w-full max-w-7xl px-3 sm:px-4">
+        <div className="mb-6 flex flex-col gap-4 rounded-lg border bg-white p-3 shadow-sm sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-3 md:flex-row md:items-center">
+            <div className="relative w-full md:max-w-md md:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               <input
                 className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none focus:border-orange-500"
@@ -619,7 +672,7 @@ export default function App() {
                 onChange={(event) => setSearchTerm(event.target.value)}
               />
             </div>
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
               {filterOptions.map((side) => (
                 <button
                   key={side}
@@ -634,14 +687,25 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-xs font-bold text-white hover:bg-yellow-600">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-yellow-500 px-3 py-2 text-xs font-bold text-white hover:bg-yellow-600 sm:px-4">
               <Camera size={16} /> Tìm bằng AI
               <input
                 type="file"
                 className="hidden"
                 onChange={handleAiSearch}
                 accept="image/*"
+                disabled={!user}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-white hover:bg-orange-600 sm:px-4">
+              <Camera size={16} /> Camera
+              <input
+                type="file"
+                className="hidden"
+                onChange={handleAiSearch}
+                accept="image/*"
+                capture="environment"
                 disabled={!user}
               />
             </label>
@@ -652,7 +716,7 @@ export default function App() {
                 setFormData(emptyForm);
                 setShowFormModal(true);
               }}
-              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-xs font-bold text-white hover:bg-green-700 disabled:bg-gray-300"
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white hover:bg-green-700 disabled:bg-gray-300 sm:px-4"
             >
               <Plus size={16} /> Thêm Dữ Liệu
             </button>
@@ -727,8 +791,32 @@ export default function App() {
           </div>
         )}
 
+        {user && searchPreview && (
+          <div className="mb-4 overflow-hidden rounded-lg border bg-white p-3 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative h-28 w-full overflow-hidden rounded-lg bg-gray-100 sm:w-40">
+                <img src={searchPreview} className="h-full w-full object-cover" alt="Ảnh tìm kiếm AI" />
+                {isScanning && (
+                  <div className="absolute inset-0">
+                    <div className="absolute inset-x-0 top-0 h-1/3 animate-[scan_1.2s_linear_infinite] bg-gradient-to-b from-yellow-300/0 via-yellow-300/70 to-yellow-300/0" />
+                    <div className="absolute inset-0 border-2 border-yellow-400/70" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-900">
+                  {isScanning ? "Đang quét vật thể trong ảnh..." : "Đã quét xong ảnh tìm kiếm"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  AI chỉ trả kết quả với những ảnh đã có vector. Dữ liệu cũ cần bấm tạo AI trong chi tiết.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {user && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {visibleProducts.map((product) => (
             <div
               key={`${product.id}-${product.image_url}`}
@@ -855,6 +943,14 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={loading || selectedProduct.images.length === 0}
+                    onClick={() => handleBuildEmbeddings(selectedProduct)}
+                    className="flex flex-1 items-center justify-center gap-1 rounded-lg border bg-white px-3 py-2 text-xs font-bold text-yellow-700 hover:border-yellow-500 disabled:text-gray-300"
+                  >
+                    <RefreshCw size={14} /> Tạo AI
+                  </button>
                   <button
                     type="button"
                     onClick={() => {

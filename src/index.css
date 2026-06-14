@@ -35,3 +35,12 @@ button:disabled {
 img {
   display: block;
 }
+
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(300%);
+  }
+}
