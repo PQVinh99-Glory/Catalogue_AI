@@ -6,11 +6,13 @@ from storage.buckets
 where id = 'product-images';
 
 select
-  table_name,
-  row_security
-from information_schema.tables
-where table_schema = 'public'
-  and table_name in ('products', 'product_images');
+  n.nspname as schema_name,
+  c.relname as table_name,
+  c.relrowsecurity as row_level_security_enabled
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname in ('products', 'product_images');
 
 select
   column_name,
