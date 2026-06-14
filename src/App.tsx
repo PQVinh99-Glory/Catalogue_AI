@@ -201,34 +201,55 @@ const handleSave = async (e: React.FormEvent) => {
     }
   };
 
-  const handleAiSearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+ const handleAiSearch = async (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
 
-    setLoading(true);
-    try {
-      const compressed = await compressImage(file);
-      const previewUrl = URL.createObjectURL(compressed);
-      
-      // Lấy vector của ảnh tìm kiếm
-      const queryVector = await getVector(previewUrl);
+  const file = e.target.files?.[0];
 
-      // GỌI RPC SUPABASE - Tính toán vector ngay tại Server
-      const { data, error } = await supabase.rpc('match_images', {
-        query_embedding: queryVector,
-        match_threshold: 0.3, // Độ khớp tối thiểu 30%
-        match_count: 10
-      });
+  if (!file) return;
 
-      if (error) throw error;
-      setProducts(data as any);
-    } catch (err: any) {
-      alert('Lỗi AI: ' + err.message);
-    } finally {
-      setLoading(false);
+  setLoading(true);
+
+  try {
+
+    const compressed =
+      await compressImage(file);
+
+    const vector =
+      await clipService.extractVector(
+        compressed
+      );
+
+    const { data, error } =
+      await supabase.rpc(
+        'match_images',
+        {
+          query_embedding: vector,
+          match_threshold: 0.3,
+          match_count: 10
+        }
+      );
+
+    if (error) {
+      throw error;
     }
-  };
 
+    setProducts(data as FullProduct[]);
+
+  } catch (err: any) {
+
+    alert(
+      'Lỗi AI: ' +
+      err.message
+    );
+
+  } finally {
+
+    setLoading(false);
+
+  }
+};
   // --- ZOOM LOGIC (Giữ nguyên như bản trước) ---
   const handleOpenZoom = (url: string) => { setZoomImage(url); setScale(1); setRotation(0); setPosition({ x: 0, y: 0 }); };
   const handleMouseDown = (e: React.MouseEvent) => {
