@@ -137,6 +137,7 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [operationMessage, setOperationMessage] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSide, setFilterSide] = useState<SideFilter>("tất cả");
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_DISPLAY_LIMIT);
@@ -289,10 +290,20 @@ export default function App() {
     if (!user || files.length === 0) return;
 
     const imagePayloads = [];
+    let skippedEmbeddings = 0;
 
     for (const file of files) {
       const compressed = await compressImage(file);
-      const vector = await getClipVector(compressed);
+      let vector: number[] | null = null;
+
+      try {
+        vector = await getClipVector(compressed);
+      } catch (error) {
+        skippedEmbeddings += 1;
+        setAiStatus("error");
+        setAiError(error instanceof Error ? error.message : "Không tạo được vector AI.");
+      }
+
       const path = `${user.id}/${productId}/${crypto.randomUUID()}.jpg`;
 
       const { error: uploadError } = await supabase.storage
@@ -314,6 +325,12 @@ export default function App() {
 
     const { error: imageError } = await supabase.from("product_images").insert(imagePayloads);
     if (imageError) throw imageError;
+
+    if (skippedEmbeddings > 0) {
+      setOperationMessage(
+        `Đã lưu ${files.length} ảnh. Có ${skippedEmbeddings} ảnh chưa có vector AI vì model chưa tải được.`,
+      );
+    }
   };
 
   const closeForm = () => {
@@ -342,6 +359,7 @@ export default function App() {
     }
 
     setLoading(true);
+    setOperationMessage(null);
 
     try {
       const productPayload = {
@@ -658,6 +676,12 @@ export default function App() {
         {user && loading && (
           <div className="mb-4 rounded-lg border bg-white p-3 text-sm text-gray-600">
             Đang xử lý dữ liệu...
+          </div>
+        )}
+
+        {user && operationMessage && (
+          <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+            {operationMessage}
           </div>
         )}
 

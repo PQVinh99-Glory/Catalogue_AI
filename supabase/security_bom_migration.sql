@@ -9,6 +9,9 @@ alter table public.product_images
 alter table public.product_images
   alter column image_url drop not null;
 
+alter table public.product_images
+  alter column embedding drop not null;
+
 create index if not exists products_bom_code_idx
   on public.products(bom_code);
 
@@ -62,6 +65,7 @@ as $$
     from public.product_images pi
     join public.products p on p.id = pi.product_id
     where p.user_id = auth.uid()
+      and pi.embedding is not null
       and 1 - (pi.embedding <=> query_embedding) >= match_threshold
   )
   select
