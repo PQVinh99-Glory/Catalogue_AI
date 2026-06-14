@@ -1,4 +1,7 @@
-import { pipeline } from "@xenova/transformers";
+import { env, pipeline } from "@xenova/transformers";
+
+env.allowLocalModels = false;
+env.useBrowserCache = true;
 
 let extractorPromise: Promise<any> | null = null;
 
@@ -58,10 +61,14 @@ self.addEventListener("message", async (event) => {
       });
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Error";
+
     self.postMessage({
       type: "ERROR",
       requestId,
-      error: error instanceof Error ? error.message : "Unknown Error",
+      error: message.includes("<!doctype")
+        ? "Không tải được model CLIP từ Hugging Face. Kiểm tra mạng hoặc refresh lại trang."
+        : message,
     });
   }
 });
