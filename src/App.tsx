@@ -5,7 +5,9 @@ import type { User } from "@supabase/supabase-js";
 import {
   Camera,
   Image as ImageIcon,
+  LockKeyhole,
   LogOut,
+  Mail,
   Pencil,
   Plus,
   RefreshCw,
@@ -132,6 +134,9 @@ export default function App() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductCard | null>(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSide, setFilterSide] = useState<SideFilter>("tất cả");
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_DISPLAY_LIMIT);
@@ -435,6 +440,55 @@ export default function App() {
     }
   };
 
+  const handlePasswordSignIn = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setAuthMessage(null);
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+
+      if (error) throw error;
+      setAuthPassword("");
+    } catch (error) {
+      setAuthMessage(
+        error instanceof Error
+          ? error.message
+          : "Không đăng nhập được. Vui lòng kiểm tra tài khoản được cấp quyền.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMagicLink = async () => {
+    setLoading(true);
+    setAuthMessage(null);
+
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: authEmail.trim(),
+        options: {
+          shouldCreateUser: false,
+        },
+      });
+
+      if (error) throw error;
+      setAuthMessage("Đã gửi link đăng nhập. Kiểm tra email công ty của anh.");
+    } catch (error) {
+      setAuthMessage(
+        error instanceof Error
+          ? error.message
+          : "Không gửi được magic link. Email này có thể chưa được cấp quyền.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOpenZoom = (url: string) => {
     setZoomImage(url);
     setScale(1);
@@ -522,15 +576,22 @@ export default function App() {
           <div className="flex gap-3">
             <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-xs font-bold text-white hover:bg-yellow-600">
               <Camera size={16} /> Tìm bằng AI
-              <input type="file" className="hidden" onChange={handleAiSearch} accept="image/*" />
+              <input
+                type="file"
+                className="hidden"
+                onChange={handleAiSearch}
+                accept="image/*"
+                disabled={!user}
+              />
             </label>
             <button
+              disabled={!user}
               onClick={() => {
                 setEditingProduct(null);
                 setFormData(emptyForm);
                 setShowFormModal(true);
               }}
-              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-xs font-bold text-white hover:bg-green-700"
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-xs font-bold text-white hover:bg-green-700 disabled:bg-gray-300"
             >
               <Plus size={16} /> Thêm Linh Kiện
             </button>
@@ -538,17 +599,68 @@ export default function App() {
         </div>
 
         {!user && (
-          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
-            Chưa có phiên đăng nhập. Vui lòng đăng nhập Supabase trước khi tải dữ liệu.
+          <div className="mx-auto max-w-md rounded-lg border bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="rounded-lg bg-orange-100 p-2 text-orange-600">
+                <LockKeyhole size={20} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Đăng nhập nội bộ</h2>
+                <p className="text-xs text-gray-500">Chỉ tài khoản đã được cấp quyền mới truy cập dữ liệu công ty.</p>
+              </div>
+            </div>
+            <form onSubmit={handlePasswordSignIn} className="space-y-3">
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none focus:border-orange-500"
+                  type="email"
+                  placeholder="Email công ty"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="relative">
+                <LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none focus:border-orange-500"
+                  type="password"
+                  placeholder="Mật khẩu"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                />
+              </div>
+              {authMessage && (
+                <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-800">
+                  {authMessage}
+                </div>
+              )}
+              <button
+                disabled={loading}
+                className="w-full rounded-lg bg-orange-500 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:bg-gray-300"
+              >
+                Đăng Nhập
+              </button>
+              <button
+                type="button"
+                disabled={loading || !authEmail.trim()}
+                onClick={handleMagicLink}
+                className="w-full rounded-lg border py-2 text-sm font-bold text-gray-700 hover:border-orange-500 hover:text-orange-600 disabled:text-gray-300"
+              >
+                Gửi Magic Link
+              </button>
+            </form>
           </div>
         )}
 
-        {loading && (
+        {user && loading && (
           <div className="mb-4 rounded-lg border bg-white p-3 text-sm text-gray-600">
             Đang xử lý dữ liệu...
           </div>
         )}
 
+        {user && (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {visibleProducts.map((product) => (
             <div
@@ -607,8 +719,9 @@ export default function App() {
             </div>
           ))}
         </div>
+        )}
 
-        {filteredProducts.length > displayLimit && (
+        {user && filteredProducts.length > displayLimit && (
           <div className="mt-6 flex justify-center">
             <button
               onClick={() => setDisplayLimit((limit) => limit + DEFAULT_DISPLAY_LIMIT)}
