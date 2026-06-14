@@ -59,8 +59,14 @@ interface ProductCard {
   side: ProductSide;
   user_id: string;
   image_url: string;
+  images: ProductImageView[];
   storage_paths: string[];
   similarity?: number;
+}
+
+interface ProductImageView {
+  url: string;
+  storage_path?: string;
 }
 
 type AiStatus = "idle" | "loading" | "ready" | "error";
@@ -68,6 +74,7 @@ type AiStatus = "idle" | "loading" | "ready" | "error";
 const DEFAULT_DISPLAY_LIMIT = 20;
 const MAX_IMAGES_PER_PRODUCT = 4;
 const SIGNED_URL_TTL_SECONDS = 60 * 30;
+const ENABLE_CLIENT_AI_EMBEDDING = false;
 
 const sideOptions: ProductSide[] = ["trái", "phải", "cả hai"];
 const filterOptions: SideFilter[] = ["tất cả", ...sideOptions];
@@ -143,6 +150,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSide, setFilterSide] = useState<SideFilter>("tất cả");
   const [displayLimit, setDisplayLimit] = useState(DEFAULT_DISPLAY_LIMIT);
+  const [selectedProduct, setSelectedProduct] = useState<ProductCard | null>(null);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -195,7 +203,14 @@ export default function App() {
         const images = product.product_images ?? [
           { image_url: product.image_url, storage_path: product.storage_path },
         ];
-        const firstImage = images[0];
+        const signedImages = (
+          await Promise.all(
+            images.map(async (image) => ({
+              url: await signImageUrl(image),
+              storage_path: image.storage_path ?? undefined,
+            })),
+          )
+        ).filter((image) => Boolean(image.url));
 
         return {
           id: product.id,
@@ -204,7 +219,8 @@ export default function App() {
           feature: product.feature ?? "",
           side: product.side,
           user_id: product.user_id,
-          image_url: firstImage ? await signImageUrl(firstImage) : "",
+          image_url: signedImages[0]?.url ?? "",
+          images: signedImages,
           storage_paths: images
             .map((image) => image.storage_path)
             .filter((path): path is string => Boolean(path)),
@@ -294,12 +310,16 @@ export default function App() {
       const compressed = await compressImage(file);
       let vector: number[] | null = null;
 
-      try {
-        vector = await getClipVector(compressed);
-      } catch (error) {
+      if (ENABLE_CLIENT_AI_EMBEDDING) {
+        try {
+          vector = await getClipVector(compressed);
+        } catch (error) {
+          skippedEmbeddings += 1;
+          setAiStatus("error");
+          setAiError(error instanceof Error ? error.message : "Không tạo được vector AI.");
+        }
+      } else {
         skippedEmbeddings += 1;
-        setAiStatus("error");
-        setAiError(error instanceof Error ? error.message : "Không tạo được vector AI.");
       }
 
       const path = `${user.id}/${productId}/${crypto.randomUUID()}.jpg`;
@@ -326,7 +346,7 @@ export default function App() {
 
     if (skippedEmbeddings > 0) {
       setOperationMessage(
-        `Đã lưu ${files.length} ảnh. Có ${skippedEmbeddings} ảnh chưa có vector AI vì model chưa tải được.`,
+        `Đã lưu ${files.length} ảnh. Có ${skippedEmbeddings} ảnh chưa có vector AI; phần AI sẽ được xử lý bằng dịch vụ online ở bước triển khai.`,
       );
     }
   };
@@ -561,8 +581,8 @@ export default function App() {
           <div className="flex items-center gap-3">
             <Sparkles className="text-yellow-300" size={28} />
             <div>
-              <h1 className="text-xl font-bold uppercase">Sổ Tay Linh Kiện Sofa</h1>
-              <p className="text-xs text-white/80">Tra cứu khung sườn bằng ảnh, mã linh kiện và BOM</p>
+              <h1 className="text-xl font-bold uppercase">Sổ Tay Tra Cứu Thông Minh</h1>
+              <p className="text-xs text-white/80">Tra cứu bằng ảnh, mã, BOM và ghi chú sử dụng</p>
             </div>
           </div>
 
@@ -634,7 +654,7 @@ export default function App() {
               }}
               className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-xs font-bold text-white hover:bg-green-700 disabled:bg-gray-300"
             >
-              <Plus size={16} /> Thêm Linh Kiện
+              <Plus size={16} /> Thêm Dữ Liệu
             </button>
           </div>
         </div>
@@ -715,8 +735,8 @@ export default function App() {
               className="group relative overflow-hidden rounded-lg border bg-white shadow-sm"
             >
               <div
-                onClick={() => product.image_url && handleOpenZoom(product.image_url)}
-                className="relative aspect-square cursor-zoom-in overflow-hidden bg-gray-100"
+                onClick={() => setSelectedProduct(product)}
+                className="relative aspect-square cursor-pointer overflow-hidden bg-gray-100"
               >
                 {product.image_url ? (
                   <img
@@ -749,13 +769,19 @@ export default function App() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleEdit(product)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleEdit(product);
+                    }}
                     className="flex flex-1 items-center justify-center gap-1 rounded border px-2 py-1 text-[11px] font-bold text-gray-600 hover:border-orange-500 hover:text-orange-600"
                   >
                     <Pencil size={12} /> Sửa
                   </button>
                   <button
-                    onClick={() => handleDelete(product)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleDelete(product);
+                    }}
                     className="rounded border px-2 py-1 text-red-600 hover:border-red-500"
                     title="Xóa linh kiện"
                   >
@@ -779,6 +805,117 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {selectedProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between bg-orange-500 p-4 text-white">
+              <div>
+                <h2 className="text-lg font-bold">Chi Tiết Dữ Liệu</h2>
+                <p className="text-xs text-white/80">{selectedProduct.component_code}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full p-2 hover:bg-white/20"
+                onClick={() => setSelectedProduct(null)}
+                title="Đóng"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="grid gap-5 overflow-y-auto p-5 md:grid-cols-[280px_1fr]">
+              <div className="space-y-3 rounded-lg border bg-gray-50 p-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase text-gray-400">Mã</p>
+                  <p className="font-bold text-gray-900">{selectedProduct.component_code}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase text-gray-400">BOM</p>
+                  <p className="font-semibold text-orange-600">
+                    {selectedProduct.bom_code || "Chưa gán"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase text-gray-400">Sử dụng</p>
+                  <p className="capitalize text-gray-700">{selectedProduct.side}</p>
+                </div>
+                {typeof selectedProduct.similarity === "number" && (
+                  <div>
+                    <p className="text-[11px] font-bold uppercase text-gray-400">Độ khớp AI</p>
+                    <p className="font-semibold text-green-600">
+                      {Math.round(selectedProduct.similarity * 100)}%
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-[11px] font-bold uppercase text-gray-400">Ghi chú</p>
+                  <p className="whitespace-pre-wrap text-sm text-gray-700">
+                    {selectedProduct.feature || "Chưa có ghi chú."}
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleEdit(selectedProduct);
+                      setSelectedProduct(null);
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1 rounded-lg border bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:border-orange-500 hover:text-orange-600"
+                  >
+                    <Pencil size={14} /> Sửa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDelete(selectedProduct);
+                      setSelectedProduct(null);
+                    }}
+                    className="rounded-lg border bg-white px-3 py-2 text-xs font-bold text-red-600 hover:border-red-500"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase text-gray-500">
+                    Hình ảnh ({selectedProduct.images.length})
+                  </h3>
+                  <p className="text-xs text-gray-400">Bấm vào ảnh để phóng to</p>
+                </div>
+                {selectedProduct.images.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {selectedProduct.images.map((image, index) => (
+                      <button
+                        key={`${image.url}-${index}`}
+                        type="button"
+                        onClick={() => handleOpenZoom(image.url)}
+                        className="group relative aspect-square overflow-hidden rounded-lg border bg-gray-100"
+                      >
+                        <img
+                          src={image.url}
+                          className="h-full w-full object-cover transition group-hover:scale-105"
+                          alt={`${selectedProduct.component_code} ảnh ${index + 1}`}
+                          loading="lazy"
+                        />
+                        <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white">
+                          Ảnh {index + 1}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex min-h-48 items-center justify-center rounded-lg border bg-gray-50 text-gray-400">
+                    Chưa có ảnh hiển thị.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showFormModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
